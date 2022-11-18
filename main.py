@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 
 
 def main():
@@ -16,8 +17,11 @@ def main():
     green = np.array(green)
     blue = np.array(blue)
 
-    # Params of distortion
+    # Param of distortion
     distortion = kernel(15, 5)
+
+    # Param of noise
+    threshold = 1e-10
 
     # Get a blurry image
     noisy_img_r = blur_image(red, distortion)
@@ -27,13 +31,33 @@ def main():
     noisy_image.save('Pictures/blur.jpg')
 
     # Inverse Filtration
-    restored_img_r = inverse_filtering(noisy_img_r, distortion)
-    restored_img_g = inverse_filtering(noisy_img_g, distortion)
-    restored_img_b = inverse_filtering(noisy_img_b, distortion)
-    restored_img = reformation_image(restored_img_r, restored_img_g, restored_img_b, distortion)
-    restored_img.save('Pictures/inverseFiltration.jpg')
+    # Use inverse filter for each channel and connect them
+    restored_img_r_if = inverse_filtering(noisy_img_r, distortion, threshold=threshold)
+    restored_img_g_if = inverse_filtering(noisy_img_g, distortion, threshold=threshold)
+    restored_img_b_if = inverse_filtering(noisy_img_b, distortion, threshold=threshold)
+    restored_img_if = reformation_image(restored_img_r_if, restored_img_g_if,
+                                        restored_img_b_if, distortion)
+    restored_img_if.save('Pictures/inverseFiltration.jpg')
 
-    tile(noisy_image, restored_img, img).show()
+    inv_filtration_composition = [noisy_image, restored_img_if, img]
+    description_if = ["Blur", "Inverse filtration", "original"]
+
+    draw(inv_filtration_composition, description_if)
+
+    # Wiener Filtration
+    # Use wiener filter for each channel and connect them
+    wiener_k = 0.00006  # const in wiener expression
+    restored_img_r_wiener = wiener_filtration(noisy_img_r, distortion, wiener_k)
+    restored_img_g_wiener = wiener_filtration(noisy_img_g, distortion, wiener_k)
+    restored_img_b_wiener = wiener_filtration(noisy_img_b, distortion, wiener_k)
+    restored_img_wiener = reformation_image(restored_img_r_wiener, restored_img_g_wiener,
+                                            restored_img_b_wiener, distortion)
+
+    wiener_filtration_composition = [noisy_image, restored_img_wiener, img]
+    description_wiener = ["Blur", "Wiener filtration", "original"]
+
+    draw(wiener_filtration_composition, description_wiener)
+
 
 # Kernel nucleus
 def kernel(size, sigma):
@@ -106,6 +130,14 @@ def reformation_image(r, g, b, distortion):
     return blurry
 
 
+def wiener_filtration(blur_image, distor_func, K):
+    G = np.fft.fft2(blur_image)  # FI of blurred img
+    H = get_H(distor_func, blur_image.shape)  # H - func of distortion (FI)
+    F = np.conj(H) / (np.abs(H) ** 2 + K) * G  # F - func of orig img (FI)
+    restored = np.abs(np.fft.ifft2(F))  # orig img
+    return restored
+
+
 def tile(*images, vertical=False):
     width, height = images[0].width, images[0].height
     tiled_size = (
@@ -123,6 +155,19 @@ def tile(*images, vertical=False):
             row += width
 
     return tiled_img
+
+
+def draw(image, description):
+    fig, ax = plt.subplots(1, len(image))
+
+    for i in range(len(image)):
+        ax[i].imshow(image[i])
+        ax[i].set_title(description[i])
+
+    fig.set_figwidth(10)
+    fig.set_figheight(10)
+
+    plt.show()
 
 
 if __name__ == '__main__':
