@@ -1,66 +1,72 @@
 import numpy as np
 from PIL import Image
-import matplotlib.pyplot as plt
 
 
 def main():
-    # Load original image
-    filename = 'Pictures/original.jpg'
-    img = Image.open(filename)
-    img.load()
+    filename = "Pictures/original.jpg"
+    original_image = Image.open(filename)
+    original_image = original_image.convert('L')
+    original = np.array(original_image)
 
-    # Split image into three channels(RGB)
-    red, green, blue = img.split()
+    noise = noise_matrix(original.shape, 0.01)
+    blur = blur_matrix(10, 3, original)
 
-    # Convert images to numpy arrays
-    red = np.array(red)
-    green = np.array(green)
-    blue = np.array(blue)
+    distorted = distort_image(original, blur, noise)
+    distorted_image = Image.fromarray(distorted)
 
-    # Param of distortion
-    distortion = kernel(15, 5)
+    restored_inv = inverse_filtration(distorted, blur, noise)
+    restored_image_inv = Image.fromarray(restored_inv)
 
-    # Param of noise
-    threshold = 1e-10
+    wiener_const = 0.000001
+    restored_wiener = wiener_filtration(distorted, blur, wiener_const)
+    restored_image_wiener = Image.fromarray(restored_wiener)
 
-    # Get a blurry image
-    noisy_img_r = blur_image(red, distortion)
-    noisy_img_g = blur_image(green, distortion)
-    noisy_img_b = blur_image(blue, distortion)
-    noisy_image = reformation_image(noisy_img_r, noisy_img_g, noisy_img_b, distortion)
-    noisy_image.save('Pictures/blur.jpg')
-
-    # Inverse Filtration
-    # Use inverse filter for each channel and connect them
-    restored_img_r_if = inverse_filtering(noisy_img_r, distortion, threshold=threshold)
-    restored_img_g_if = inverse_filtering(noisy_img_g, distortion, threshold=threshold)
-    restored_img_b_if = inverse_filtering(noisy_img_b, distortion, threshold=threshold)
-    restored_img_if = reformation_image(restored_img_r_if, restored_img_g_if,
-                                        restored_img_b_if, distortion)
-    restored_img_if.save('Pictures/inverseFiltration.jpg')
-
-    inv_filtration_composition = [noisy_image, restored_img_if, img]
-    description_if = ["Blur", "Inverse filtration", "original"]
-
-    draw(inv_filtration_composition, description_if)
-
-    # Wiener Filtration
-    # Use wiener filter for each channel and connect them
-    wiener_k = 0.00006  # const in wiener expression
-    restored_img_r_wiener = wiener_filtration(noisy_img_r, distortion, wiener_k)
-    restored_img_g_wiener = wiener_filtration(noisy_img_g, distortion, wiener_k)
-    restored_img_b_wiener = wiener_filtration(noisy_img_b, distortion, wiener_k)
-    restored_img_wiener = reformation_image(restored_img_r_wiener, restored_img_g_wiener,
-                                            restored_img_b_wiener, distortion)
-
-    wiener_filtration_composition = [noisy_image, restored_img_wiener, img]
-    description_wiener = ["Blur", "Wiener filtration", "original"]
-
-    draw(wiener_filtration_composition, description_wiener)
+    interactive(distorted_image, restored_image_inv, restored_image_wiener)
 
 
-# Kernel nucleus
-def kernel(size, sigma):
+def interactive(distorted_image, restored_image_inv, restored_image_wiener):
+    description = ["Choose image: ", "1. Distorted image ", "2. Inverse filtration ", "3. Wiener filtration ",
+                   "0. Close"]
+    for i in description:
+        print(i)
+    work = True
+    while work:
+        tools = input()
+        if tools == '1':
+            distorted_image.show()
+        elif tools == '2':
+            restored_image_inv.show()
+        elif tools == '3':
+            restored_image_wiener.show()
+        elif tools == '0':
+            work = False
+        else:
+            print("Incorrect input")
+
+
+def distort_image(original, blur, noise):
+    blur_spec = np.fft.fft2(blur)
+    noise_spec = np.fft.fft2(noise)
+    original_spec = np.fft.fft2(original)
+    distorted = np.fft.ifft2(original_spec * blur_spec + noise_spec)
+    return np.abs(distorted)
+
+
+def add_blur(image, distortion):
+    h = np.fft.fft2(distortion)
+    f = np.fft.fft2(image)
+    g = h * f
+    blurred = np.fft.ifft2(g)
+    return np.abs(blurred)
+
+
+def add_noise(image, factor):
+    noise = noise_matrix(image.shape, factor)
+    noisy_img = image + noise
+    return noisy_img
+
+
+def blur_matrix(size, sigma, image):
     # Centers of filter
     x0 = size // 2
     y0 = size // 2
@@ -68,106 +74,37 @@ def kernel(size, sigma):
     x = np.arange(0, size, dtype=float)
     y = np.arange(0, size, dtype=float)[:, np.newaxis]
 
-    # Exponent part of gaussian function
     exp_part = ((x - x0) ** 2 + (y - y0) ** 2) / (2 * sigma ** 2)
     gaussian = 1 / (2 * np.pi * sigma ** 2) * np.exp(-exp_part)
+    gaussian_normalized = gaussian / np.sum(gaussian)
 
-    # Return normalized gaussian func
-    return gaussian / np.sum(gaussian)
-
-
-# Fourier image of distortion func
-def get_H(h, shape):
-    h_padded = np.zeros(shape)
-    h_padded[:h.shape[0], :h.shape[1]] = np.copy(h)
-    H = np.fft.fft2(h_padded)
-    return H
+    blur = np.zeros(image.shape)
+    blur[:gaussian_normalized.shape[0], :gaussian_normalized.shape[1]] = np.copy(gaussian_normalized)
+    return blur
 
 
-# Inverse H
-def inverse_H(H, threshold=1e-10):
-    M = np.zeros(H.shape)
-    M[np.abs(H) > threshold] = 1
-
-    H1 = H.copy()
-    H1[np.abs(H1) <= threshold] = 1
-    return M / H1
+def noise_matrix(shape, var):
+    mean = 0.0
+    noise = np.random.normal(mean, var, shape)
+    noise = noise.reshape(shape)
+    return noise
 
 
-def inverse_filtering(blur_img, h, threshold=1e-10):
-    G = np.fft.fft2(blur_img)  # FI of blurred img
-    H = get_H(h, blur_img.shape)  # H - func of distortion (FI)
-    F = G * inverse_H(H, threshold)  # F - func of orig img (FI)
-    f = np.fft.ifft2(F)  # orig img
-    return np.abs(f)
+def inverse_filtration(distorted, blur, noise):
+    distorted_spec = np.fft.fft2(distorted)
+    blur_spec = np.fft.fft2(blur)
+    noise_spec = np.fft.fft2(noise)
+    restored_spec = distorted_spec / blur_spec + noise_spec / blur_spec
+    restored = np.fft.ifft2(restored_spec)
+    return np.abs(restored)
 
 
-def blur_image(image, kernel_n):
-    F = np.fft.fft2(image)  # F - func of orig img (FI)
-    H = get_H(kernel_n, image.shape)  # H - func of distortion (FI)
-    G = F * H  # FI of blurred img
-    g = np.fft.ifft2(G)  # blurred img
-    return np.abs(g)
-
-
-# r,g,b - numpy arrays
-def reformation_image(r, g, b, distortion):
-    # Convert numpy array to img
-    r = Image.fromarray(r)
-    # Convert from F to L format
-    r = r.convert('L')
-
-    # The same for each other channels
-    g = Image.fromarray(g)
-    g = g.convert('L')
-
-    b = Image.fromarray(b)
-    b = b.convert('L')
-
-    # Merge channels
-    blurry = Image.merge("RGB", (r, g, b))
-    # Return blurred img
-    return blurry
-
-
-def wiener_filtration(blur_image, distor_func, K):
-    G = np.fft.fft2(blur_image)  # FI of blurred img
-    H = get_H(distor_func, blur_image.shape)  # H - func of distortion (FI)
-    F = np.conj(H) / (np.abs(H) ** 2 + K) * G  # F - func of orig img (FI)
-    restored = np.abs(np.fft.ifft2(F))  # orig img
+def wiener_filtration(distorted, blur, wiener_const):
+    distorted_spec = np.fft.fft2(distorted)
+    blur_spec = np.fft.fft2(blur)
+    restored_spec = np.conj(blur_spec) / (np.abs(blur_spec) ** 2 + wiener_const) * distorted_spec
+    restored = np.abs(np.fft.ifft2(restored_spec))
     return restored
-
-
-def tile(*images, vertical=False):
-    width, height = images[0].width, images[0].height
-    tiled_size = (
-        (width, height * len(images))
-        if vertical
-        else (width * len(images), height)
-    )
-    tiled_img = Image.new(images[0].mode, tiled_size)
-    row, col = 0, 0
-    for image in images:
-        tiled_img.paste(image, (row, col))
-        if vertical:
-            col += height
-        else:
-            row += width
-
-    return tiled_img
-
-
-def draw(image, description):
-    fig, ax = plt.subplots(1, len(image))
-
-    for i in range(len(image)):
-        ax[i].imshow(image[i])
-        ax[i].set_title(description[i])
-
-    fig.set_figwidth(10)
-    fig.set_figheight(10)
-
-    plt.show()
 
 
 if __name__ == '__main__':
