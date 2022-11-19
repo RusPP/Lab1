@@ -9,7 +9,7 @@ def main():
     original = np.array(original_image)
 
     noise = noise_matrix(original.shape, 0.01)
-    blur = blur_matrix(10, 3, original)
+    blur = blur_matrix(10, 3, original, 0)
 
     distorted = distort_image(original, blur, noise)
     distorted_image = Image.fromarray(distorted)
@@ -20,6 +20,12 @@ def main():
     wiener_const = 0.000001
     restored_wiener = wiener_filtration(distorted, blur, wiener_const)
     restored_image_wiener = Image.fromarray(restored_wiener)
+
+    blur_p = blur
+    blur_m = blur_matrix(10, 3, original, 1)
+    restored_lucy = richardson_lucy(distorted, blur_p, blur_m, 30)
+    restored_image_lucy = Image.fromarray(restored_lucy)
+    restored_image_lucy.show()
 
     interactive(distorted_image, restored_image_inv, restored_image_wiener)
 
@@ -66,13 +72,17 @@ def add_noise(image, factor):
     return noisy_img
 
 
-def blur_matrix(size, sigma, image):
+def blur_matrix(size, sigma, image, sign):
     # Centers of filter
     x0 = size // 2
     y0 = size // 2
 
-    x = np.arange(0, size, dtype=float)
-    y = np.arange(0, size, dtype=float)[:, np.newaxis]
+    if sign == 0:
+        x = np.arange(0, size, dtype=float)
+        y = np.arange(0, size, dtype=float)[:, np.newaxis]
+    elif sign == 1:
+        x = -np.arange(0, size, dtype=float)
+        y = -np.arange(0, size, dtype=float)[:, np.newaxis]
 
     exp_part = ((x - x0) ** 2 + (y - y0) ** 2) / (2 * sigma ** 2)
     gaussian = 1 / (2 * np.pi * sigma ** 2) * np.exp(-exp_part)
@@ -105,6 +115,23 @@ def wiener_filtration(distorted, blur, wiener_const):
     restored_spec = np.conj(blur_spec) / (np.abs(blur_spec) ** 2 + wiener_const) * distorted_spec
     restored = np.abs(np.fft.ifft2(restored_spec))
     return restored
+
+
+def richardson_lucy(distorted, blur_p, blur_m, iteration):
+    distorted_spec = np.fft.fft2(distorted)
+    blur_p_spec = np.fft.fft2(blur_p)
+    blur_m_spec = np.fft.fft2(blur_m)
+
+    new_restored = distorted
+    new_restored_spec = distorted_spec
+    for i in range(iteration):
+        restored = new_restored
+        restored_spec = new_restored_spec
+        _hf = np.fft.ifft2(blur_p_spec * restored_spec)
+        _ghf = distorted / _hf
+        _hghf = np.fft.ifft2(blur_m_spec * np.fft.fft2(_ghf))
+        new_restored = restored * _hghf
+    return np.abs(new_restored)
 
 
 if __name__ == '__main__':
