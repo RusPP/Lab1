@@ -18,7 +18,7 @@ def main():
     original_grayscale = np.array(original_image_grayscale)
 
     # Initialize noise and blur matrix
-    noise_intensity = 0.1
+    noise_intensity = 5
     noise = noise_matrix(original_grayscale.shape, noise_intensity)
     blur = blur_matrix(10, 3, original_grayscale)
 
@@ -210,8 +210,9 @@ def regularization(distorted, blur, noise):
     laplas_spec = np.fft.fft2(laplas)
 
     _lambda = 1.0
-    _alpha = 10000000.0
-
+    _alpha = 0.1
+    step = 0.01
+    repeat = 2
     while True:
         restored_spec = np.conj(blur_spec) / (
                 np.abs(blur_spec) ** 2 + _lambda * np.abs(laplas_spec) ** 2) * distorted_spec
@@ -221,9 +222,15 @@ def regularization(distorted, blur, noise):
         discrepancy_norm = np.sum(discrepancy ** 2)
         noise_norm = np.sum(noise ** 2)
         if discrepancy_norm < noise_norm - _alpha:
-            _lambda += 10
+            if repeat == 0:
+                step = step/2
+            _lambda += step
+            repeat = 1
         elif discrepancy_norm > noise_norm + _alpha:
-            _lambda -= 10
+            if repeat == 1:
+                step = step/2
+            _lambda -= step
+            repeat = 0
         else:
             return np.abs(restored)
 
