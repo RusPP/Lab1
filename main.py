@@ -3,47 +3,109 @@ from PIL import Image
 
 
 def main():
+    # Load original image
     filename = "Pictures/original.jpg"
     original_image = Image.open(filename)
-    original_image = original_image.convert('L')
-    original = np.array(original_image)
 
-    noise = noise_matrix(original.shape, 1)
-    blur = blur_matrix(10, 3, original)
+    # Split into 3 rgb channels
+    red, green, blue = original_image.split()
+    red = np.array(red)
+    green = np.array(green)
+    blue = np.array(blue)
+
+    # Original image in grayscale mode
+    original_image_grayscale = original_image.convert('L')
+    original_grayscale = np.array(original_image_grayscale)
+
+    # Initialize noise and blur matrix
+    noise_intensity = 0.1
+    noise = noise_matrix(original_grayscale.shape, noise_intensity)
+    blur = blur_matrix(10, 3, original_grayscale)
 
     # Blur + noisy
-    distorted = distort_image(original, blur, noise)
-    distorted_image = Image.fromarray(distorted)
+    # Matrices:
+    distorted_red = distort_image(red, blur, noise)
+    distorted_green = distort_image(green, blur, noise)
+    distorted_blue = distort_image(blue, blur, noise)
+    # Images:
+    distorted_image_red = reform(distorted_red)
+    distorted_image_green = reform(distorted_green)
+    distorted_image_blue = reform(distorted_blue)
+    distorted_image = Image.merge("RGB", (distorted_image_red, distorted_image_green, distorted_image_blue))
 
     # Inverse filtration
-    restored_inv = inverse_filtration(distorted, blur, noise)
-    restored_image_inv = Image.fromarray(restored_inv)
+    # Matrices:
+    restored_inv_red = inverse_filtration(distorted_red, blur, noise)
+    restored_inv_green = inverse_filtration(distorted_green, blur, noise)
+    restored_inv_blue = inverse_filtration(distorted_blue, blur, noise)
+    # Images:
+    restored_image_inv_red = reform(restored_inv_red)
+    restored_image_inv_green = reform(restored_inv_green)
+    restored_image_inv_blue = reform(restored_inv_blue)
+    restored_image_inv = Image.merge("RGB", (restored_image_inv_red, restored_image_inv_green, restored_image_inv_blue))
 
     # Wiener
     wiener_const = 0.000001
-    restored_wiener = wiener_filtration(distorted, blur, wiener_const)
-    restored_image_wiener = Image.fromarray(restored_wiener)
+    # Matrices:
+    restored_wiener_red = wiener_filtration(distorted_red, blur, wiener_const)
+    restored_wiener_green = wiener_filtration(distorted_green, blur, wiener_const)
+    restored_wiener_blue = wiener_filtration(distorted_blue, blur, wiener_const)
+    # Images:
+    restored_image_wiener_red = reform(restored_wiener_red)
+    restored_image_wiener_green = reform(restored_wiener_green)
+    restored_image_wiener_blue = reform(restored_wiener_blue)
+    restored_image_wiener = Image.merge("RGB", (
+        restored_image_wiener_red, restored_image_wiener_green, restored_image_wiener_blue))
 
     # Lucy richardson
-    restored_lucy = richardson_lucy(distorted, blur, 1)
-    restored_image_lucy = Image.fromarray(restored_lucy)
+    # Matrices:
+    iteration = 3
+    restored_lucy_red = richardson_lucy(distorted_red, blur, iteration)
+    restored_lucy_green = richardson_lucy(distorted_green, blur, iteration)
+    restored_lucy_blue = richardson_lucy(distorted_blue, blur, iteration)
+    # Images:
+    restored_image_lucy_red = reform(restored_lucy_red)
+    restored_image_lucy_green = reform(restored_lucy_green)
+    restored_image_lucy_blue = reform(restored_lucy_blue)
+    restored_image_lucy = Image.merge("RGB",
+                                      (restored_image_lucy_red, restored_image_lucy_green, restored_image_lucy_blue))
 
     # Tikhonov regularization
-    restored_reg = regularization(distorted, blur, noise)
-    restored__image_reg = Image.fromarray(restored_reg)
+    # Matrices:
+    restored_reg_red = regularization(distorted_red, blur, noise)
+    restored_reg_green = regularization(distorted_green, blur, noise)
+    restored_reg_blue = regularization(distorted_blue, blur, noise)
+    # Images:
+    restored_image_reg_red = reform(restored_reg_red)
+    restored_image_reg_green = reform(restored_reg_green)
+    restored_image_reg_blue = reform(restored_reg_blue)
+    restored_image_reg = Image.merge("RGB",
+                                     (restored_image_reg_red, restored_image_reg_green, restored_image_reg_blue))
 
-    interactive(distorted_image, restored_image_inv, restored_image_wiener, restored_image_lucy, restored__image_reg)
+    # Console interactions
+    interactive(original_image, distorted_image, restored_image_inv, restored_image_wiener, restored_image_lucy,
+                restored_image_reg)
 
 
-def interactive(distorted_image, restored_image_inv, restored_image_wiener, restored_image_lucy, restored_image_reg):
-    description = ["Choose image: ", "1. Distorted image ", "2. Inverse filtration ", "3. Wiener filtration ",
-                   "4. Richardson-Lucy ", "5. Tikhonov regularization ", "0. Close"]
+def reform(array):
+    image = Image.fromarray(array)
+    image = image.convert('L')
+    return image
+
+
+def interactive(original_image, distorted_image, restored_image_inv,
+                restored_image_wiener, restored_image_lucy, restored_image_reg):
+    description = ["Choose image: ", "0. Original image", "1. Distorted image ", "2. Inverse filtration ",
+                   "3. Wiener filtration ",
+                   "4. Richardson-Lucy ", "5. Tikhonov regularization ", "6. Close"]
     for i in description:
         print(i)
     work = True
     while work:
         tools = input()
-        if tools == '1':
+        if tools == '0':
+            original_image.show()
+        elif tools == '1':
             distorted_image.show()
         elif tools == '2':
             restored_image_inv.show()
@@ -53,7 +115,7 @@ def interactive(distorted_image, restored_image_inv, restored_image_wiener, rest
             restored_image_lucy.show()
         elif tools == '5':
             restored_image_reg.show()
-        elif tools == '0':
+        elif tools == '6':
             work = False
         else:
             print("Incorrect input")
